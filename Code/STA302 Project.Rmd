@@ -1,0 +1,35 @@
+---
+title: "How do geographical location, housing characteristics, demographics, and income levels affect the house value in California?"
+author: "XingYu Wang"
+date: "2024-06-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+## R Markdown
+
+```{r}
+housing_clean = housing %>% na.omit()
+housing_clean = housing_clean[, -which(names(housing_clean) %in% c("total_rooms","households"))]
+```
+
+After dropping missing value and useless columns, we have 20433 observations left.
+
+```{r}
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
