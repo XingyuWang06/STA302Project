@@ -7,29 +7,51 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
+install.packages("dplyr")
+install.packages("ggplot2")
 ```
 
-## R Markdown
+```{r}
+
+library(readr)
+library(ggplot2)
+```
+
+
+## Method Section
 
 ```{r}
 housing_clean = housing %>% na.omit()
 housing_clean = housing_clean[, -which(names(housing_clean) %in% c("total_rooms","households"))]
+housing_clean["median_income"] = housing_clean["median_income"]*10000
 ```
 
 After dropping missing value and useless columns, we have 20433 observations left.
 
-```{r}
+** Model Validation **
 
+```{r}
+set.seed(889)
+sample_size <- floor(0.7 * nrow(housing_clean))
+train_indices <- sample(seq_len(nrow(housing_clean)), size = sample_size)
+trainSet <- housing_clean[train_indices, ]
+testSet <- housing_clean[-train_indices, ]
 ```
 
+To validate whether a model is effective or not, it is essential to randomly split a dataset into two parts: a training set and a testing set. The training set is used to build and train the model, while the testing set is used to evaluate the model's performance on unseen data.
 
 ## Including Plots
 
-You can also embed plots, for example:
+```{r}
+# outcome plot
+plt1 <- ggplot(trainSet, aes(x=median_house_value)) +
+    geom_histogram(binwidth=45, colour="black", fill="white") + labs(title = "Median House Value for Each Blocks in California") + theme(plot.title = element_text(hjust = 0.5)) + xlab("Median House Value") + ylab("Count") +
+   geom_vline(xintercept=mean(trainSet$median_house_value), color = "red")
+```
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+
+```{r}
+plot(trainSet$housing_median_age, trainSet$median_house_value, main="Median House Value by Housing Median Age", xlab="housing_median_age", ylab="median_house_value")
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
