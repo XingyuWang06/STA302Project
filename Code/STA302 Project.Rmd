@@ -84,6 +84,7 @@ pairs(trainSet[,3:10])
 model <- lm(median_house_value ~ housing_median_age + total_rooms + total_bedrooms + population + households + median_income + ocean_proximity, data=trainSet)
 summary(model)
 ```
+
 ```{r}
 anova(model)
 vif(model)
@@ -101,6 +102,7 @@ lines(lowess(trainSet$median_house_value ~ fit), lty=2)
 columns <- trainSet[,c(3,4,5,6,7,8,10)]
 pairs(columns)
 ```
+
 ```{r}
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
 plot(model)
@@ -125,8 +127,19 @@ summary(powerTransform(cbind(trainSet[,3:9])))
 summary(powerTransform(cbind(trainSet[,3:8])))
 
 # if we wanted only to transform y, we would use boxCox function instead
+boxCox(modell)
+```
+```{r}
+# this transforms all X and Y simultaneously
+summary(powerTransform(cbind(trainSet[,3:9])))
+
+# if we only wanted to consider transformations on X
+summary(powerTransform(cbind(trainSet[,3:8])))
+
+# if we wanted only to transform y, we would use boxCox function instead
 boxCox(model)
 ```
+
 ## Transformation
 
 ```{r}
@@ -435,6 +448,18 @@ ggplot(data = testSet, aes(x = median_house_value_log, y = predictions)) +
 AIC(test_model)
 
 BIC(test_model)
+```
+```{r}
+coef_model1 <- summary(model_reduced6)$coefficients
+coef_model2 <- summary(test_model)$coefficients
+
+coef_comparison <- data.frame(
+  Estimate_Train = coef_model1[, "Estimate"],
+  Std_Error_Train = coef_model1[, "Std. Error"],
+  Estimate_Test = coef_model2[, "Estimate"],
+  Std_Error_Test = coef_model2[, "Std. Error"]
+)
+print(coef_comparison)
 ```
 
 
