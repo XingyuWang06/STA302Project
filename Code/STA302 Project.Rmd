@@ -40,7 +40,7 @@ After dropping missing value and useless columns, we have 20433 observations lef
 set.seed(889)
 
 housing_clean = housing_clean[sample(nrow(housing_clean), 2000),]
-sample_size <- floor(0.7 * nrow(housing_clean))
+sample_size <- floor(0.6 * nrow(housing_clean))
 train_indices <- sample(seq_len(nrow(housing_clean)), size = sample_size)
 trainSet <- housing_clean[train_indices, ]
 testSet <- housing_clean[-train_indices, ]
@@ -216,7 +216,7 @@ lrs1
 ```
 **remove these bad points**
 ```{r}
-modelfit2 <- lm(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet[-c(221, 883, 978, 1019, 1314),])
+modelfit2 <- lm(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet[-c(221, 883, 978, 1019),])
 summary(modelfit2)
 ```
 ```{r}
@@ -283,7 +283,7 @@ trainSet_clean <- trainSet[-c(221, 883, 978, 1019, 1314),]
 
 # Check VIF
 ```{r}
-vif(modelfit1)
+vif(modelfit2)
 cor(trainSet_clean[, c("total_rooms_log", "total_bedrooms_log", "households_log", "population_log")])
 ```
 **remove households_log**
@@ -430,34 +430,11 @@ ggplot(data = testSet, aes(x = median_house_value_log, y = predictions)) +
        y = "Predicted Log Median House Value") +
   theme_minimal()
 ```
-```{r}
-test_model2 = lm(median_house_value_log ~ housing_median_age + total_bedrooms_log + population_log + median_income_log + ocean_proximity, data=testSet)
-summary(test_model2)
-vif(test_model2)
-```
-```{r}
-par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
-plot(test_model2)
-```
-```{r}
-predictions2 <- predict(model_reduced5, newdata = testSet)
-
-ggplot(data = testSet, aes(x = median_house_value_log, y = predictions2)) +
-  geom_point() +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  labs(title = "Predicted vs Actual Values",
-       x = "Actual Log Median House Value",
-       y = "Predicted Log Median House Value") +
-  theme_minimal()
-```
-
 
 ```{r}
 AIC(test_model)
-AIC(test_model2)
 
 BIC(test_model)
-BIC(test_model2)
 ```
 
 
