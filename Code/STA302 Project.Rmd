@@ -9,20 +9,26 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 install.packages("dplyr")
 install.packages("ggplot2")
+install.packages("car")
+install.packages("fastDummies")
+install.packages("pls")
 ```
 
 ```{r}
-
+library(dplyr)
 library(readr)
 library(ggplot2)
+library(MASS)
+library(car)
+library(fastDummies)
+library(pls)
 ```
-
 
 ## Method Section
 
 ```{r}
+housing = read.csv("./housing.csv")
 housing_clean = housing %>% na.omit()
-housing_clean = housing_clean[, -which(names(housing_clean) %in% c("total_rooms","households"))]
 housing_clean["median_income"] = housing_clean["median_income"]*10000
 ```
 
@@ -32,10 +38,23 @@ After dropping missing value and useless columns, we have 20433 observations lef
 
 ```{r}
 set.seed(889)
+
+housing_clean = housing_clean[sample(nrow(housing_clean), 2000),]
 sample_size <- floor(0.7 * nrow(housing_clean))
 train_indices <- sample(seq_len(nrow(housing_clean)), size = sample_size)
 trainSet <- housing_clean[train_indices, ]
 testSet <- housing_clean[-train_indices, ]
+```
+
+```{r}
+trainSet <- dummy_cols(trainSet, select_columns = "ocean_proximity", remove_first_dummy = TRUE, remove_selected_columns = FALSE)
+trainSet$ocean_proximity <- factor(trainSet$ocean_proximity, levels = c("INLAND", "<1H OCEAN", "NEAR BAY", "NEAR OCEAN"))
+```
+
+```{r}
+colnames(trainSet)[colnames(trainSet) == 'ocean_proximity_INLAND'] <- 'Inland'
+colnames(trainSet)[colnames(trainSet) == 'ocean_proximity_NEAR BAY'] <- 'Near_Bay'
+colnames(trainSet)[colnames(trainSet) == 'ocean_proximity_NEAR OCEAN'] <- 'Near_Ocean'
 ```
 
 To validate whether a model is effective or not, it is essential to randomly split a dataset into two parts: a training set and a testing set. The training set is used to build and train the model, while the testing set is used to evaluate the model's performance on unseen data.
@@ -43,15 +62,450 @@ To validate whether a model is effective or not, it is essential to randomly spl
 ## Including Plots
 
 ```{r}
-# outcome plot
-plt1 <- ggplot(trainSet, aes(x=median_house_value)) +
-    geom_histogram(binwidth=45, colour="black", fill="white") + labs(title = "Median House Value for Each Blocks in California") + theme(plot.title = element_text(hjust = 0.5)) + xlab("Median House Value") + ylab("Count") +
+ggplot(trainSet, aes(x=median_house_value)) +
+    geom_histogram(aes(y = after_stat(count)), binwidth = 45000, colour="black", fill="white") + labs(title = "Median House Value for Each Blocks in California") + theme(plot.title = element_text(hjust = 0.5)) + xlab("Median House Value") + ylab("Frequency") +
    geom_vline(xintercept=mean(trainSet$median_house_value), color = "red")
+```
+```{r}
+par(mfrow = c(2, 3), mar = c(4, 4, 3, 3), cex.main = 1, cex.lab = 1, cex.axis = 1)
+plot(trainSet$median_house_value ~ trainSet$housing_median_age, main="Median House Value vs House Median Age", xlab="House Median Age", ylab="Median House Value")
+plot(trainSet$median_house_value ~ trainSet$total_rooms, main="Median House Value vs Total Rooms", xlab="Total Rooms", ylab="Median House Value")
+plot(trainSet$median_house_value ~ trainSet$total_bedrooms, main="Median House Value vs Total Bedrooms", xlab="Total Bedrooms", ylab="Median House Value")
+plot(trainSet$median_house_value ~ trainSet$population, main="Median House Value vs Population", xlab="Population", ylab="Median House Value")
+plot(trainSet$median_house_value ~ trainSet$households, main="Median House Value vs Households", xlab="Households", ylab="Median House Value")
+plot(trainSet$median_house_value ~ trainSet$median_income, main="Median House Value vs Median Income", xlab="Median Income", ylab="Median House Value")
+boxplot(trainSet$median_house_value ~ trainSet$ocean_proximity,  main="Median House Value vs Ocean Proximity", xlab="Ocean Proximity", ylab="Median House Value", names=c("Inland","<1H Ocean","Near Bay","Near Ocean"))
+```
+
+```{r}
+pairs(trainSet[,3:10])
+```
+```{r}
+model <- lm(median_house_value ~ housing_median_age + total_rooms + total_bedrooms + population + households + median_income + ocean_proximity, data=trainSet)
+summary(model)
+```
+```{r}
+anova(model)
+vif(model)
+```
+
+```{r}
+# check condition 1
+fit <- model$fitted.values
+plot(trainSet$median_house_value ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(trainSet$median_house_value ~ fit), lty=2)
+
+
+# check condition 2
+columns <- trainSet[,c(3,4,5,6,7,8,10)]
+pairs(columns)
+```
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model)
+```
+
+```{r}
+par(mfrow=c(3,3), mar = c(5, 5, 1, 1))
+r <- model$residuals
+plot(r ~ trainSet[,3], xlab="Median House Age", ylab="Residuals")
+plot(r ~ trainSet[,4], xlab="Total Rooms", ylab="Residuals")
+plot(r ~ trainSet[,5], xlab="Total Bedrooms", ylab="Residuals")
+plot(r ~ trainSet[,6], xlab="Population", ylab="Residuals")
+plot(r ~ trainSet[,7], xlab="Households", ylab="Residuals")
+plot(r ~ trainSet[,8], xlab="Median Income", ylab="Residuals")
+plot(r ~ trainSet[,10], xlab="Ocean Proximity", ylab="Residuals")
+```
+```{r}
+# this transforms all X and Y simultaneously
+summary(powerTransform(cbind(trainSet[,3:9])))
+
+# if we only wanted to consider transformations on X
+summary(powerTransform(cbind(trainSet[,3:8])))
+
+# if we wanted only to transform y, we would use boxCox function instead
+boxCox(model)
+```
+## Transformation
+
+```{r}
+# Applying log transformation
+trainSet$total_rooms_log <- log(trainSet$total_rooms)
+trainSet$total_bedrooms_log <- log(trainSet$total_bedrooms)
+trainSet$population_log <- log(trainSet$population)
+trainSet$households_log <- log(trainSet$households)
+trainSet$median_income_log <- log(trainSet$median_income)
+trainSet$median_house_value_log <- log(trainSet$median_house_value)
+```
+
+```{r}
+modelfit1 <- lm(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet)
+summary(modelfit1)
+```
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(modelfit1)
+```
+**Check AIC**
+```{r}
+AIC(modelfit1)
+BIC(modelfit1)
+
+AIC(model)
+BIC(model)
 ```
 
 
 ```{r}
-plot(trainSet$housing_median_age, trainSet$median_house_value, main="Median House Value by Housing Median Age", xlab="housing_median_age", ylab="median_house_value")
+fit <- modelfit1$fitted.values
+plot(trainSet$median_house_value_log ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(trainSet$median_house_value_log ~ fit), lty=2)
+
+# check condition 2
+pairs(trainSet[,c(3,14:18)])
+
+par(mfrow=c(3,3), mar = c(5, 5, 1, 1))
+r <- modelfit1$residuals
+plot(r ~ trainSet[,3], xlab="Median House Age", ylab="Residuals")
+plot(r ~ trainSet[,14], xlab="log(Total Rooms)", ylab="Residuals")
+plot(r ~ trainSet[,15], xlab="log(Total Bedrooms)", ylab="Residuals")
+plot(r ~ trainSet[,16], xlab="log(Population)", ylab="Residuals")
+plot(r ~ trainSet[,17], xlab="log(Households)", ylab="Residuals")
+plot(r ~ trainSet[,18], xlab="log(Median Income)", ylab="Residuals")
+plot(r ~ trainSet[,10], xlab="Ocean Proximity", ylab="Residuals")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+ggplot(trainSet, aes(x=median_house_value_log)) +
+    geom_histogram(aes(y = after_stat(count)), binwidth = 0.2, colour="black", fill="white") + labs(title = "Log Median House Value for Each Blocks in California") + theme(plot.title = element_text(hjust = 0.5)) + xlab("Log Median House Value") + ylab("Frequency") +
+   geom_vline(xintercept=mean(trainSet$median_house_value_log), color = "red")
+```
+```{r}
+hii_clean <- hatvalues(modelfit1)
+r_clean <- rstandard(modelfit1)
+
+# Create a scatter plot of leverage vs. standardized residuals
+plot(hii_clean, r_clean, 
+     main = "Leverage vs. Standardized Residuals (Cleaned Data)", 
+     xlab = "Leverage", 
+     ylab = "Standardized Residuals",
+     pch = 19, 
+     col = "blue")
+
+# Add horizontal lines at standardized residuals = -4 and 4
+abline(h = c(-4, 4), col = "red", lty = 2)
+
+# Optionally, add vertical lines at high leverage threshold
+high_leverage_threshold <- 2 * mean(hii_clean)
+abline(v = high_leverage_threshold, col = "green", lty = 2)
+
+# Label the points with high leverage or large standardized residuals
+high_leverage <- hii_clean > high_leverage_threshold
+large_residuals <- abs(r_clean) > 4
+points_to_label <- which(high_leverage | large_residuals)
+text(hii_clean[points_to_label], r_clean[points_to_label], labels = points_to_label, pos = 4, cex = 0.7, col = "red")
+```
+```{r}
+hii1 <- hatvalues(modelfit1)
+r1 <- rstandard(modelfit1)
+lrp1 <- r1[which(hii1 > 4/nrow(trainSet))]
+lrs1 <- which(lrp1 >=4 | lrp1 <=-4)
+lrs1
+```
+**remove these bad points**
+```{r}
+modelfit2 <- lm(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet[-c(221, 883, 978, 1019, 1314),])
+summary(modelfit2)
+```
+```{r}
+# check condition 1
+fit <- modelfit2$fitted.values
+plot(trainSet[-c(221, 883, 978, 1019, 1314),]$median_house_value_log ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(trainSet[-c(221, 883, 978, 1019, 1314),]$median_house_value_log ~ fit), lty=2)
+
+
+# check condition 2
+columns <- trainSet[-c(221, 883, 978, 1019, 1314),][,c(3,4,5,6,7,8,10)]
+pairs(columns)
+```
+
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(modelfit2)
+```
+Maybe remove these outliers are good for fit model.
+
+```{r}
+hii_clean <- hatvalues(modelfit2)
+r_clean <- rstandard(modelfit2)
+
+# Create a scatter plot of leverage vs. standardized residuals
+plot(hii_clean, r_clean, 
+     main = "Leverage vs. Standardized Residuals (Cleaned Data)", 
+     xlab = "Leverage", 
+     ylab = "Standardized Residuals",
+     pch = 19, 
+     col = "blue")
+
+# Add horizontal lines at standardized residuals = -4 and 4
+abline(h = c(-4, 4), col = "red", lty = 2)
+
+# Optionally, add vertical lines at high leverage threshold
+high_leverage_threshold <- 2 * mean(hii_clean)
+abline(v = high_leverage_threshold, col = "green", lty = 2)
+
+# Label the points with high leverage or large standardized residuals
+high_leverage <- hii_clean > high_leverage_threshold
+large_residuals <- abs(r_clean) > 4
+points_to_label <- which(high_leverage | large_residuals)
+text(hii_clean[points_to_label], r_clean[points_to_label], labels = points_to_label, pos = 4, cex = 0.7, col = "red")
+```
+```{r}
+hii2 <- hatvalues(modelfit2)
+r2 <- rstandard(modelfit2)
+lrp2 <- r2[which(hii2 > 4/nrow(trainSet[-c(221, 883, 978, 1019, 1314),]))]
+lrs2 <- which(lrp2 >=4 | lrp2 <=-4)
+lrs2
+```
+
+```{r}
+AIC(modelfit2)
+BIC(modelfit2)
+```
+Do not remove any points above.
+
+```{r}
+trainSet_clean <- trainSet[-c(221, 883, 978, 1019, 1314),]
+```
+
+# Check VIF
+```{r}
+vif(modelfit1)
+cor(trainSet_clean[, c("total_rooms_log", "total_bedrooms_log", "households_log", "population_log")])
+```
+**remove households_log**
+
+```{r}
+model_reduced1 = lm(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced1)
+vif(model_reduced1)
+```
+**remove total_bedrooms_log**
+
+```{r}
+model_reduced2 = lm(median_house_value_log ~ housing_median_age + total_rooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced2)
+vif(model_reduced2)
+anova(model_reduced2)
+```
+**remove total_rooms_log**
+
+```{r}
+model_reduced3 = lm(median_house_value_log ~ housing_median_age + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced3)
+vif(model_reduced3)
+```
+**remove total_bedrooms_log + households_log**
+
+```{r}
+model_reduced4 = lm(median_house_value_log ~ housing_median_age + total_rooms_log + population_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced4)
+vif(model_reduced4)
+```
+**remove total_rooms_log + households_log**
+
+```{r}
+model_reduced5 = lm(median_house_value_log ~ housing_median_age + total_bedrooms_log + population_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced5)
+vif(model_reduced5)
+```
+**remove total_bedrooms_log + total_rooms_log**
+
+```{r}
+model_reduced6 = lm(median_house_value_log ~ housing_median_age + population_log + households_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced6)
+vif(model_reduced6)
+```
+```{r}
+# check condition 1
+fit <- model_reduced6$fitted.values
+plot(trainSet_clean$median_house_value_log ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(trainSet_clean$median_house_value_log ~ fit), lty=2)
+
+
+# check condition 2
+columns <- trainSet_clean[,c(3,4,5,6,7,8,10)]
+pairs(columns)
+```
+**remove households_log + total_bedrooms_log + total_rooms_log**
+
+```{r}
+model_reduced7 = lm(median_house_value_log ~ housing_median_age + population_log + median_income_log + ocean_proximity, data=trainSet_clean)
+summary(model_reduced7)
+vif(model_reduced7)
+```
+
+# Summary
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced1)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced2)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced3)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced4)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced5)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced6)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(model_reduced7)
+```
+```{r}
+AIC(modelfit1)
+AIC(modelfit2)
+AIC(model_reduced1)
+AIC(model_reduced2)
+AIC(model_reduced3)
+AIC(model_reduced4)
+AIC(model_reduced5)
+AIC(model_reduced6)
+AIC(model_reduced7)
+```
+```{r}
+BIC(modelfit1)
+BIC(modelfit2)
+BIC(model_reduced1)
+BIC(model_reduced2)
+BIC(model_reduced3)
+BIC(model_reduced4)
+BIC(model_reduced5)
+BIC(model_reduced6)
+BIC(model_reduced7)
+```
+
+# Test Model
+```{r}
+testSet$total_rooms_log <- log(testSet$total_rooms)
+testSet$total_bedrooms_log <- log(testSet$total_bedrooms)
+testSet$population_log <- log(testSet$population)
+testSet$households_log <- log(testSet$households)
+testSet$median_income_log <- log(testSet$median_income)
+testSet$median_house_value_log <- log(testSet$median_house_value)
+```
+
+```{r}
+testSet <- dummy_cols(testSet, select_columns = "ocean_proximity", remove_first_dummy = TRUE, remove_selected_columns = FALSE)
+testSet$ocean_proximity <- factor(testSet$ocean_proximity, levels = c("INLAND", "<1H OCEAN", "NEAR BAY", "NEAR OCEAN"))
+```
+
+```{r}
+test_model <- lm(median_house_value_log ~ housing_median_age + population_log + households_log + median_income_log + ocean_proximity, data=testSet)
+summary(test_model)
+vif(test_model)
+```
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(test_model)
+```
+```{r}
+predictions <- predict(model_reduced6, newdata = testSet)
+
+ggplot(data = testSet, aes(x = median_house_value_log, y = predictions)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Values",
+       x = "Actual Log Median House Value",
+       y = "Predicted Log Median House Value") +
+  theme_minimal()
+```
+```{r}
+test_model2 = lm(median_house_value_log ~ housing_median_age + total_bedrooms_log + population_log + median_income_log + ocean_proximity, data=testSet)
+summary(test_model2)
+vif(test_model2)
+```
+```{r}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(test_model2)
+```
+```{r}
+predictions2 <- predict(model_reduced5, newdata = testSet)
+
+ggplot(data = testSet, aes(x = median_house_value_log, y = predictions2)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Values",
+       x = "Actual Log Median House Value",
+       y = "Predicted Log Median House Value") +
+  theme_minimal()
+```
+
+
+```{r}
+AIC(test_model)
+AIC(test_model2)
+
+BIC(test_model)
+BIC(test_model2)
+```
+
+
+# try to reduce vif
+
+*PCR method*
+
+```{r}
+pc.fit <- prcomp(~ housing_median_age + total_bedrooms_log + total_rooms_log + population_log + households_log + median_income_log + Inland + Near_Bay + Near_Ocean, data= trainSet, scale=TRUE)
+summary(pc.fit)
+screeplot(pc.fit, type = 'l')
+```
+The "elbow rule" tel us that we need to choose a value around the curve or when the contribution to the variance starts to flatten, here we see it is around 5-6 components, so for consistency we keep 5 components.
+
+```{r}
+transdata <- as.data.frame(cbind(trainSet$median_house_value_log, pc.fit$x[,1:5]))
+colnames(transdata)[1] <- "median_house_value_log"
+
+pcr_lm_model <- lm(median_house_value_log ~., data = transdata)
+summary(pcr_lm_model)
+```
+
+
+*ridge method*
+```{r}
+X <- model.matrix(median_house_value_log ~ housing_median_age + total_rooms_log + total_bedrooms_log + population_log + households_log + median_income_log + ocean_proximity, data = trainSet)[, -1]
+y <- trainSet$median_house_value_log
+ridge_model <- glmnet(X, y, alpha = 0)
+
+set.seed(889)
+cv_ridge <- cv.glmnet(X, y, alpha = 0)
+
+# Plot cross-validation results
+plot(cv_ridge)
+
+# Optimal lambda
+optimal_lambda <- cv_ridge$lambda.min
+print(optimal_lambda)
+
+# Fit the final ridge regression model
+final_ridge_model <- glmnet(X, y, alpha = 0, lambda = optimal_lambda)
+
+print(coef(final_ridge_model))
+
+# Predictions
+predictions <- predict(final_ridge_model, s = optimal_lambda, newx = X)
+
+# Evaluate the model
+mse <- mean((y - predictions)^2)
+print(mse)
+```
